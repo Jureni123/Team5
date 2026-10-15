@@ -25,13 +25,15 @@ jobs:
         with:
           ndk-version: r29
       
+      # ✅ PERBAIKAN: GANTI PATTERN HASH FILES AGAR TIDAK TIMEOUT
+      # Scan hanya folder Build/ dan Library/ yang relevan dengan C++
       - name: Cache Native Builds (WebRTC & Install)
         uses: actions/cache@v4
         with:
           path: |
             ${{runner.workspace}}/webrtc
             ${{runner.workspace}}/install-android
-          key: ${{ runner.os }}-native-r29-${{ hashFiles('**/CMakeLists.txt', '**/Makefile', 'Build/**') }}
+          key: ${{ runner.os }}-native-r29-${{ hashFiles('Build/**', 'Library/**/CMakeLists.txt') }}
           restore-keys: |
             ${{ runner.os }}-native-r29-
             ${{ runner.os }}-native-
@@ -42,7 +44,7 @@ jobs:
           export JAVA_HOME=${{ env.JAVA_HOME }}
           sudo make depend-ubuntu24-android || echo "Warning: Dependency install skipped/warned. Using pre-installed Java 17."
       
-      # ✅ PERBAIKAN UTAMA: GANTI android-all JADI android-arm64-v8a
+      # ✅ BUILD TEAMTALK LIBRARY (TIDAK DIUBAH)
       - name: Build TeamTalk Library (C++ ARM64 ONLY)
         working-directory: ${{github.workspace}}/Build
         run: |
@@ -66,11 +68,12 @@ jobs:
           keyPassword=android123
           EOF
       
+      # ✅ OPTIMASI GRADLE: HAPUS --no-daemon AGAR LEBIH CEPAT
       - name: Build arm64-v8a Release APK
         working-directory: ${{github.workspace}}/Client/TeamTalkAndroid
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease
       
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
