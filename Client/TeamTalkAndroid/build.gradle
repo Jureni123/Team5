@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
+    // ✅ TAMBAHKAN PLUGIN GOOGLE SERVICES DI SINI
+    id 'com.google.gms.google-services' version '4.4.0' apply false
 }
 
 def ksFile = rootProject.file('keystore.properties')
@@ -126,6 +128,12 @@ dependencies {
     implementation libs.androidx.preference
     implementation libs.androidx.viewpager
     implementation libs.material
+    
+    // ✅ TAMBAHKAN DEPENDENCY FIREBASE DI SINI
+    implementation platform('com.google.firebase:firebase-bom:32.7.0')
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.android.gms:play-services-auth:20.7.0'
+    
     implementation files('../../Library/TeamTalkJNI/libs/TeamTalk5.jar')
 
     testImplementation libs.junit.jupiter.api
@@ -137,3 +145,6 @@ dependencies {
     androidTestImplementation libs.junit.jupiter.api
     androidTestImplementation files('../../Library/TeamTalkJNI/libs/TeamTalk5Test.jar')
 }
+
+// ✅ WAJIB ADA DI PALING BAWAH UNTUK AKTIFKAN GOOGLE SERVICES
+apply plugin: 'com.google.gms.google-services'
