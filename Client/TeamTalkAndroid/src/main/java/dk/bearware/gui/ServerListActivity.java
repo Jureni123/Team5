@@ -16,8 +16,8 @@
  * TeamTalk SDK License Key issued by BearWare.dk.
  *
  * The TeamTalk SDK License Agreement along with its Terms and
- * Conditions are outlined in the file License.txt included with the
- * TeamTalk SDK distribution.
+ * Conditions are outlined in the file License.txt included with
+ * the TeamTalk SDK distribution.
  *
  */
 
@@ -43,6 +43,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.Button; // <--- TAMBAHAN IMPORT BUTTON
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.PopupMenu;
@@ -54,6 +55,12 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
+// <--- TAMBAHAN IMPORT FIREBASE ---
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.DocumentSnapshot;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -126,8 +133,70 @@ public class ServerListActivity extends AppCompatActivity
         initializeViews();
         setupRecyclerView();
         setupSearch();
+        
+        // <--- PANGGIL FUNGSI AUTO CONNECT DI SINI ---
+        setupAutoConnectButton(); 
+        
         setTitle(R.string.title_activity_server_list);
         executorService = Executors.newFixedThreadPool(2);
+    }
+
+    // <--- FUNGSI BARU UNTUK AUTO CONNECT KE SERVER SEWAAN ---
+    private void setupAutoConnectButton() {
+        Button btnAutoConnect = findViewById(R.id.btn_auto_connect_firebase);
+        if (btnAutoConnect == null) return;
+
+        btnAutoConnect.setOnClickListener(v -> {
+            FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+            if (user == null) {
+                Toast.makeText(this, "Silakan login Google dulu", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            FirebaseFirestore db = FirebaseFirestore.getInstance();
+            // Mengambil data berdasarkan UID user yang sedang login
+            db.collection("users").document(user.getUid()).get()
+                .addOnSuccessListener(document -> {
+                    if (document.exists()) {
+                        String ttUser = document.getString("teamtalk_username");
+                        String ttPass = document.getString("teamtalk_password");
+                        
+                        if (ttUser != null && ttPass != null) {
+                            // DATA SERVER SEWAANMU
+                            String serverIP = "159.89.177.33"; 
+                            int tcpPort = 10173; 
+                            int udpPort = 10173; 
+                            
+                            // Buat ServerEntry dari data Firebase
+                            ServerEntry firebaseEntry = new ServerEntry();
+                            firebaseEntry.servername = "Server Komunitas (Auto)";
+                            firebaseEntry.ipaddr = serverIP;
+                            firebaseEntry.tcpport = tcpPort;
+                            firebaseEntry.udpport = udpPort;
+                            firebaseEntry.username = ttUser;
+                            firebaseEntry.password = ttPass;
+                            firebaseEntry.servertype = ServerEntry.ServerType.LOCAL;
+                            
+                            // Lakukan koneksi menggunakan mekanisme bawaan
+                            this.serverentry = firebaseEntry;
+                            getService().setServerEntry(this.serverentry);
+                            
+                            if (!getService().reconnect()) {
+                                showToast(getString(R.string.err_connection));
+                            } else {
+                                showToast("Menghubungkan ke server...");
+                            }
+                        } else {
+                            Toast.makeText(this, "Data akun TT belum lengkap", Toast.LENGTH_LONG).show();
+                        }
+                    } else {
+                        Toast.makeText(this, "User tidak ditemukan di database", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .addOnFailureListener(e -> 
+                    Toast.makeText(this, "Gagal ambil data: " + e.getMessage(), Toast.LENGTH_SHORT).show()
+                );
+        });
     }
 
     private void initializeViews() {
