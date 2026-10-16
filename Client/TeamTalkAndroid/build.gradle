@@ -1,6 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
-    // ✅ TAMBAHKAN PLUGIN GOOGLE SERVICES DI SINI
+    // ✅ PLUGIN GOOGLE SERVICES
     id 'com.google.gms.google-services' version '4.4.0' apply false
 }
 
@@ -24,8 +24,14 @@ android {
         versionName = '5.22'
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
         
-        // ⚠️ PENTING: JANGAN ADA abiFilters DI SINI KALAU PAKAI SPLITS
-        // Biarkan splits yang mengatur arsitektur agar tidak bentrok
+        // ✅ EMBED COMMIT SHA KE DALAM APK (Untuk Tracking Versi)
+        def commitSha = project.hasProperty('COMMIT_SHA') ? project.COMMIT_SHA : "dev-local"
+        def commitFull = project.hasProperty('COMMIT_FULL') ? project.COMMIT_FULL : "unknown"
+        def commitMsg = project.hasProperty('COMMIT_MSG') ? project.COMMIT_MSG : "local build"
+        
+        buildConfigField "String", "GIT_COMMIT_SHA", "\"${commitSha}\""
+        buildConfigField "String", "GIT_COMMIT_FULL", "\"${commitFull}\""
+        buildConfigField "String", "GIT_COMMIT_MSG", "\"${commitMsg.replace('"', '\\"')}\""
     }
 
     signingConfigs {
@@ -36,11 +42,11 @@ android {
                 keyAlias = ks['keyAlias']
                 keyPassword = ks['keyPassword']
                 
-                // ✅ METODE SIGNING TERBARU (V1, V2, V3, V4)
+                // ✅ METODE SIGNING (V1, V2, V3)
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
-                enableV4Signing = false // Set true kalau mau upload ke Play Store
+                enableV4Signing = false
             }
         }
     }
@@ -75,7 +81,7 @@ android {
         generateLocaleConfig = true
     }
 
-    // ✅ HANYA INI YANG MENGATUR ARM64-V8A
+    // ✅ HANYA ARM64-V8A
     splits {
         abi {
             enable = true
@@ -129,7 +135,7 @@ dependencies {
     implementation libs.androidx.viewpager
     implementation libs.material
     
-    // ✅ TAMBAHKAN DEPENDENCY FIREBASE DI SINI
+    // ✅ FIREBASE
     implementation platform('com.google.firebase:firebase-bom:32.7.0')
     implementation 'com.google.firebase:firebase-auth'
     implementation 'com.google.android.gms:play-services-auth:20.7.0'
@@ -146,5 +152,5 @@ dependencies {
     androidTestImplementation files('../../Library/TeamTalkJNI/libs/TeamTalk5Test.jar')
 }
 
-// ✅ WAJIB ADA DI PALING BAWAH UNTUK AKTIFKAN GOOGLE SERVICES
+// ✅ AKTIFKAN GOOGLE SERVICES
 apply plugin: 'com.google.gms.google-services'
