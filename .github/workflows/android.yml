@@ -25,15 +25,13 @@ jobs:
         with:
           ndk-version: r29
       
-      # ✅ PERBAIKAN: GANTI PATTERN HASH FILES AGAR TIDAK TIMEOUT
-      # Scan hanya folder Build/ dan Library/ yang relevan dengan C++
       - name: Cache Native Builds (WebRTC & Install)
         uses: actions/cache@v4
         with:
           path: |
             ${{runner.workspace}}/webrtc
             ${{runner.workspace}}/install-android
-          key: ${{ runner.os }}-native-r29-${{ hashFiles('Build/**', 'Library/**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-native-r29-${{ hashFiles('**/CMakeLists.txt', '**/Makefile', 'Build/**') }}
           restore-keys: |
             ${{ runner.os }}-native-r29-
             ${{ runner.os }}-native-
@@ -44,7 +42,6 @@ jobs:
           export JAVA_HOME=${{ env.JAVA_HOME }}
           sudo make depend-ubuntu24-android || echo "Warning: Dependency install skipped/warned. Using pre-installed Java 17."
       
-      # ✅ BUILD TEAMTALK LIBRARY (TIDAK DIUBAH)
       - name: Build TeamTalk Library (C++ ARM64 ONLY)
         working-directory: ${{github.workspace}}/Build
         run: |
@@ -68,12 +65,20 @@ jobs:
           keyPassword=android123
           EOF
       
-      # ✅ OPTIMASI GRADLE: HAPUS --no-daemon AGAR LEBIH CEPAT
+      - name: 📋 Tampilkan SHA-1 Fingerprint — SALIN INI!
+        working-directory: ${{github.workspace}}/Client/TeamTalkAndroid
+        run: |
+          echo "=========================================="
+          echo "  SALIN KODE SHA-1 DI BAWAH INI:"
+          echo "=========================================="
+          keytool -list -v -keystore release-key.keystore -alias teamtalk-release -storepass android123 | grep SHA1:
+          echo "=========================================="
+      
       - name: Build arm64-v8a Release APK
         working-directory: ${{github.workspace}}/Client/TeamTalkAndroid
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --no-daemon
       
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
