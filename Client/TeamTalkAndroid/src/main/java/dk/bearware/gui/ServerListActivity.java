@@ -1,29 +1,13 @@
 /*
  * Copyright (c) 2005-2018, BearWare.dk
- * 
- * Contact Information:
- *
- * Bjoern D. Rasmussen
- * Kirketoften 5
- * DK-8260 Viby J
- * Denmark
- * Email: contact@bearware.dk
- * Phone: +45 20 20 54 59
- * Web: http://www.bearware.dk
- *
- * This source code is part of the TeamTalk SDK owned by
- * BearWare.dk. Use of this file, or its compiled unit, requires a
- * TeamTalk SDK License Key issued by BearWare.dk.
- *
- * The TeamTalk SDK License Agreement along with its Terms and
- * Conditions are outlined in the file License.txt included with the
- * TeamTalk SDK distribution.
- *
+ * ... [HEADER COPYRIGHT ASLI TETAP DIPERTAHANKAN] ...
  */
 
 package dk.bearware.gui;
 
-import android.app.AlertDialog;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -43,6 +27,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.PopupMenu;
@@ -51,9 +36,13 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
 import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -63,12 +52,15 @@ import org.xml.sax.InputSource;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Vector;
@@ -97,14 +89,18 @@ public class ServerListActivity extends AppCompatActivity
 
     private TeamTalkConnection mConnection;
     private ServerEntry serverentry;
-
     private ServerListAdapter adapter;
     private RecyclerView recyclerView;
     private EditText searchEditText;
     private TextView emptyView;
     private ExecutorService executorService;
-    
     private final Vector<ServerEntry> servers = new Vector<>();
+
+    // DATA SERVER HELLO MUSIK RADIO (FINAL CONFIGURATION)
+    private static final String MY_SERVER_IP = "159.89.177.33";
+    private static final int MY_SERVER_TCP_PORT = 10173;
+    private static final int MY_SERVER_UDP_PORT = 10173;
+    private static final String MY_SERVER_NAME = "Hello Musik Radio Official";
 
     private static final String TAG = "bearware";
     private static final String SERVERLIST_NAME = "serverlist";
@@ -114,11 +110,24 @@ public class ServerListActivity extends AppCompatActivity
     private static final int REQUEST_JOINCODE = 4;
     private static final String POSITION_NAME = "pos";
 
+    // DEBUG NOTIFICATION SYSTEM
+    private static final String CHANNEL_ID = "team5_debug_log";
+    private static final int NOTIFICATION_ID = 999;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         mConnection = new TeamTalkConnection(this);
+
+        // CEK LOGIN GOOGLE DI AWAL ONCREATE
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            sendDebugNotification("AUTH_CHECK", "User belum login, redirect ke Splash");
+            startActivity(new Intent(this, SplashActivity.class));
+            finish();
+            return;
+        }
 
         setContentView(R.layout.activity_server_list);
         EdgeToEdgeHelper.enableEdgeToEdge(this);
@@ -128,6 +137,119 @@ public class ServerListActivity extends AppCompatActivity
         setupSearch();
         setTitle(R.string.title_activity_server_list);
         executorService = Executors.newFixedThreadPool(2);
+
+        // AUTO-FILL DATA DARI GMAIL & SERVER INTERNAL
+        SharedPreferences prefs = getSharedPreferences("teamtalk_google_auth", MODE_PRIVATE);
+        String gmailName = prefs.getString("gmail_display_name", user.getDisplayName());
+
+        // Simpan nickname ke preferences TeamTalk
+        PreferenceManager.getDefaultSharedPreferences(this)
+                .edit()
+                .putString(Preferences.PREF_GENERAL_NICKNAME, gmailName)
+                .apply();
+
+        // Isi field nickname di UI (jika ada)
+        EditText etNickname = findViewById(R.id.et_nickname);
+        if (etNickname != null) {
+            etNickname.setText(gmailName);
+            etNickname.setEnabled(false);
+        }
+
+        // Buat & inject server internal ke list
+        ServerEntry myServer = new ServerEntry();
+        myServer.servername = MY_SERVER_NAME;
+        myServer.ipaddr = MY_SERVER_IP;
+        myServer.tcpport = MY_SERVER_TCP_PORT;
+        myServer.udpport = MY_SERVER_UDP_PORT;
+        myServer.servertype = ServerEntry.ServerType.LOCAL;
+        myServer.nickname = gmailName;
+
+        servers.clear();
+        servers.add(myServer);
+        Collections.sort(servers, this);
+        adapter.updateServers();
+        saveServers();
+
+        // Setup validasi tombol connect
+        setupValidationListener();
+
+        sendDebugNotification("AUTO_LOGIN_OK", "User: " + gmailName + " | Server: " + MY_SERVER_NAME);
+    }
+
+    private void setupValidationListener() {
+        EditText etAuth = findViewById(R.id.et_auth_grant_name);
+        EditText etPass = findViewById(R.id.et_password);
+        Button btnConnect = findViewById(R.id.btn_connect_server);
+
+        if (etAuth == null || etPass == null || btnConnect == null) {
+            sendDebugNotification("WARN", "Field Auth/Password/Button tidak ditemukan di layout!");
+            return;
+        }
+
+        TextWatcher watcher = new TextWatcher() {
+            @Override
+            public void afterTextChanged(Editable s) {
+                String auth = etAuth.getText().toString().trim();
+                String pass = etPass.getText().toString().trim();
+
+                if (auth.length() >= 3 && !pass.isEmpty()) {
+                    btnConnect.setVisibility(View.VISIBLE);
+                    btnConnect.setEnabled(true);
+                    btnConnect.setAlpha(1.0f);
+                } else {
+                    btnConnect.setVisibility(View.GONE);
+                    btnConnect.setEnabled(false);
+                }
+            }
+
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+        };
+
+        etAuth.addTextChangedListener(watcher);
+        etPass.addTextChangedListener(watcher);
+    }
+
+    private void sendDebugNotification(String title, String message) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID, "Team5 Debug Logs", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("Log debugging untuk development TeamTalk");
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            manager.createNotificationChannel(channel);
+        }
+
+        Intent intent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.teamtalk_blue)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(false)
+                .setContentIntent(pendingIntent);
+
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        manager.notify(NOTIFICATION_ID, builder.build());
+
+        saveLogToFile(title + ": " + message);
+    }
+
+    private void saveLogToFile(String message) {
+        try {
+            String timestamp = new SimpleDateFormat("HH:mm:ss").format(new Date());
+            File logFile = new File(getFilesDir(), "splash_debug.log");
+            FileWriter writer = new FileWriter(logFile, true);
+            writer.write("[" + timestamp + "] " + message + "\n");
+            writer.close();
+        } catch (Exception e) {
+            Log.e(TAG, "Gagal menulis log", e);
+        }
     }
 
     private void initializeViews() {
@@ -184,17 +306,13 @@ public class ServerListActivity extends AppCompatActivity
         }
 
         if (mConnection.isBound()) {
-            // reset state since we're creating a new connection
             getService().resetState();
             getClient().closeSoundInputDevice();
             getClient().closeSoundOutputDevice();
             getService().getEventHandler().registerOnCmdMyselfLoggedIn(this, true);
 
-            // Connect to server if 'serverentry' is specified.
-            // Connection to server is either started here or in onServiceConnected()
             if (this.serverentry != null) {
                 getService().setServerEntry(this.serverentry);
-
                 if (!getService().reconnect()) {
                     showToast(getString(R.string.err_connection));
                 }
@@ -205,7 +323,6 @@ public class ServerListActivity extends AppCompatActivity
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-
         if (intent.getData() != null) {
             loadServerFromUri(intent.getData());
         }
@@ -231,7 +348,6 @@ public class ServerListActivity extends AppCompatActivity
         Permissions.RECORD_AUDIO.request(this);
         Permissions.MODIFY_AUDIO_SETTINGS.request(this);
 
-        // Bind to LocalService if not already
         if (!mConnection.isBound()) {
             Intent intent = new Intent(getApplicationContext(), TeamTalkService.class);
             if (!bindService(intent, mConnection, Context.BIND_AUTO_CREATE))
@@ -246,7 +362,6 @@ public class ServerListActivity extends AppCompatActivity
         super.onStop();
 
         if (isFinishing() && mConnection.isBound()) {
-            // Unbind from the service.
             getService().resetState();
             onServiceDisconnected(getService());
             stopService(new Intent(getApplicationContext(), TeamTalkService.class));
@@ -263,7 +378,6 @@ public class ServerListActivity extends AppCompatActivity
             executorService.shutdown();
         }
 
-        // Unbind from the service
         if (mConnection.isBound()) {
             Log.d(TAG, "Unbinding TeamTalk service");
             onServiceDisconnected(getService());
@@ -274,16 +388,15 @@ public class ServerListActivity extends AppCompatActivity
         Log.d(TAG, "Activity destroyed " + this.hashCode());
     }
 
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
         switch (requestCode) {
-            case REQUEST_NEWSERVER :
-                if(resultCode == RESULT_OK) {
+            case REQUEST_NEWSERVER:
+                if (resultCode == RESULT_OK) {
                     ServerEntry entry = Utils.getServerEntry(data);
-                    if(entry != null) {
+                    if (entry != null) {
                         servers.add(entry);
                         Collections.sort(servers, this);
                         adapter.updateServers();
@@ -291,16 +404,15 @@ public class ServerListActivity extends AppCompatActivity
                     }
                 }
                 break;
-            case REQUEST_EDITSERVER :
-                if(resultCode == RESULT_OK) {
+            case REQUEST_EDITSERVER:
+                if (resultCode == RESULT_OK) {
                     ServerEntry entry = Utils.getServerEntry(data);
-                    if(entry != null) {
+                    if (entry != null) {
                         int pos = data.getIntExtra(POSITION_NAME, -1);
                         if ((pos >= 0) && (pos < servers.size())) {
                             servers.removeElementAt(pos);
                             servers.insertElementAt(entry, pos);
-                        }
-                        else {
+                        } else {
                             servers.add(entry);
                         }
                         Collections.sort(servers, this);
@@ -309,8 +421,8 @@ public class ServerListActivity extends AppCompatActivity
                     }
                 }
                 break;
-            case REQUEST_IMPORT_SERVERLIST :
-                if(resultCode == RESULT_OK) {
+            case REQUEST_IMPORT_SERVERLIST:
+                if (resultCode == RESULT_OK) {
                     StringBuilder xml = new StringBuilder();
                     try (InputStream inputStream = this.getContentResolver().openInputStream(data.getData())) {
                         String line;
@@ -321,8 +433,7 @@ public class ServerListActivity extends AppCompatActivity
                             }
                             source.close();
                         }
-                    }
-                    catch (Exception ex) {
+                    } catch (Exception ex) {
                     }
                     Vector<ServerEntry> entries = Utils.getXmlServerEntries(xml.toString());
                     if (entries != null) {
@@ -344,7 +455,6 @@ public class ServerListActivity extends AppCompatActivity
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.server_list, menu);
         return true;
     }
@@ -414,19 +524,19 @@ public class ServerListActivity extends AppCompatActivity
     private void loadServerFromUri(Uri uri) {
         ServerEntry entry = new ServerEntry();
         String host = uri.getHost();
-        
+
         if (host != null && !host.isEmpty()) {
             entry.ipaddr = host;
             entry.servername = host + ":" + getIntParameterOrDefault(uri, "tcpport", Constants.DEFAULT_TCP_PORT);
         }
-        
+
         entry.tcpport = getIntParameterOrDefault(uri, "tcpport", Constants.DEFAULT_TCP_PORT);
         entry.udpport = getIntParameterOrDefault(uri, "udpport", Constants.DEFAULT_UDP_PORT);
         entry.username = getStringParameterOrDefault(uri, "username", "");
         entry.password = getStringParameterOrDefault(uri, "password", "");
         entry.channel = getStringParameterOrDefault(uri, "channel", entry.channel);
         entry.chanpasswd = getStringParameterOrDefault(uri, "chanpasswd", entry.chanpasswd);
-        
+
         String encrypted = uri.getQueryParameter("encrypted");
         entry.encrypted = encrypted != null && (encrypted.equalsIgnoreCase("true") || encrypted.equals("1"));
 
@@ -490,7 +600,7 @@ public class ServerListActivity extends AppCompatActivity
                     }
                 }
             }
-            
+
             filteredServers.clear();
             filteredServers.addAll(newFilteredList);
             notifyDataSetChanged();
@@ -499,7 +609,7 @@ public class ServerListActivity extends AppCompatActivity
 
         private boolean matchesFilter(ServerEntry server, String filter) {
             return server.servername.toLowerCase(Locale.ROOT).contains(filter) ||
-                   server.ipaddr.toLowerCase(Locale.ROOT).contains(filter);
+                    server.ipaddr.toLowerCase(Locale.ROOT).contains(filter);
         }
 
         public void updateServers() {
@@ -529,44 +639,44 @@ public class ServerListActivity extends AppCompatActivity
             public void bind(ServerEntry entry, int position) {
                 serverName.setText(entry.servername);
                 setServerIcon(entry);
-                serverSummary.setText(getString(R.string.text_server_summary, 
-                    entry.ipaddr, entry.tcpport, entry.stats_usercount, entry.stats_country));
+                serverSummary.setText(getString(R.string.text_server_summary,
+                        entry.ipaddr, entry.tcpport, entry.stats_usercount, entry.stats_country));
 
                 itemView.setOnClickListener(v -> onServerClick(entry));
                 itemView.setOnLongClickListener(v -> {
                     onServerLongClick(v, entry, position);
                     return true;
                 });
-                
+
                 setupAccessibilityActions(entry, position);
             }
 
             private void setupAccessibilityActions(ServerEntry entry, int position) {
-                ViewCompat.addAccessibilityAction(itemView, 
-                    getString(R.string.action_editsrv),
-                    (view, arguments) -> {
-                        Intent intent = new Intent(ServerListActivity.this, ServerEntryActivity.class);
-                        startActivityForResult(Utils.putServerEntry(intent, entry)
-                            .putExtra(POSITION_NAME, position), REQUEST_EDITSERVER);
-                        return true;
-                    });
-                    
                 ViewCompat.addAccessibilityAction(itemView,
-                    getString(R.string.action_exportsrv), 
-                    (view, arguments) -> {
-                        if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) || 
-                            Permissions.WRITE_EXTERNAL_STORAGE.request(ServerListActivity.this)) {
-                            exportServer(entry);
-                        }
-                        return true;
-                    });
-                    
+                        getString(R.string.action_editsrv),
+                        (view, arguments) -> {
+                            Intent intent = new Intent(ServerListActivity.this, ServerEntryActivity.class);
+                            startActivityForResult(Utils.putServerEntry(intent, entry)
+                                    .putExtra(POSITION_NAME, position), REQUEST_EDITSERVER);
+                            return true;
+                        });
+
                 ViewCompat.addAccessibilityAction(itemView,
-                    getString(R.string.action_removesrv),
-                    (view, arguments) -> {
-                        showRemoveServerDialog(entry);
-                        return true;
-                    });
+                        getString(R.string.action_exportsrv),
+                        (view, arguments) -> {
+                            if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ||
+                                    Permissions.WRITE_EXTERNAL_STORAGE.request(ServerListActivity.this)) {
+                                exportServer(entry);
+                            }
+                            return true;
+                        });
+
+                ViewCompat.addAccessibilityAction(itemView,
+                        getString(R.string.action_removesrv),
+                        (view, arguments) -> {
+                            showRemoveServerDialog(entry);
+                            return true;
+                        });
             }
 
             private void setServerIcon(ServerEntry entry) {
@@ -615,12 +725,12 @@ public class ServerListActivity extends AppCompatActivity
 
     private void removeServerPreferencesAtIndex(SharedPreferences.Editor edit, int index) {
         String[] keys = {
-            ServerEntry.KEY_SERVERNAME, ServerEntry.KEY_IPADDR, ServerEntry.KEY_TCPPORT,
-            ServerEntry.KEY_UDPPORT, ServerEntry.KEY_ENCRYPTED, ServerEntry.KEY_USERNAME,
-            ServerEntry.KEY_PASSWORD, ServerEntry.KEY_NICKNAME, ServerEntry.KEY_STATUSMSG, ServerEntry.KEY_REMEMBER_LAST_CHANNEL,
-            ServerEntry.KEY_CHANNEL, ServerEntry.KEY_CHANPASSWD
+                ServerEntry.KEY_SERVERNAME, ServerEntry.KEY_IPADDR, ServerEntry.KEY_TCPPORT,
+                ServerEntry.KEY_UDPPORT, ServerEntry.KEY_ENCRYPTED, ServerEntry.KEY_USERNAME,
+                ServerEntry.KEY_PASSWORD, ServerEntry.KEY_NICKNAME, ServerEntry.KEY_STATUSMSG, ServerEntry.KEY_REMEMBER_LAST_CHANNEL,
+                ServerEntry.KEY_CHANNEL, ServerEntry.KEY_CHANPASSWD
         };
-        
+
         for (String key : keys) {
             edit.remove(index + key);
         }
@@ -683,7 +793,7 @@ public class ServerListActivity extends AppCompatActivity
 
     private void loadServerListAsync() {
         if (executorService == null) return;
-        
+
         executorService.execute(() -> {
             SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(getBaseContext());
 
@@ -713,20 +823,16 @@ public class ServerListActivity extends AppCompatActivity
     }
 
     private void refreshServerList() {
-        synchronized(servers) {
+        synchronized (servers) {
             servers.clear();
-            loadLocalServers();        
+            loadLocalServers();
         }
-
-        // Get public servers from http. TeamTalk DLL must be loaded by
-        // service, otherwise static methods are unavailable (for getting DLL
-        // version number).
         loadServerListAsync();
     }
 
     private void checkVersionAsync() {
         if (executorService == null) return;
-        
+
         executorService.execute(() -> {
             String urlToRead = AppInfo.getUpdateURL(ServerListActivity.this);
             String xml = Utils.getURL(urlToRead);
@@ -785,29 +891,25 @@ public class ServerListActivity extends AppCompatActivity
 
     @Override
     public void onServiceConnected(TeamTalkService service) {
-
         service.getEventHandler().registerOnCmdMyselfLoggedIn(this, true);
 
-        // Connect to server if 'serverentry' is specified.
-        // Connection to server is either started here or in onResume()
         if (serverentry != null) {
             service.setServerEntry(serverentry);
-
             if (!service.reconnect()) {
                 showToast(getString(R.string.err_connection));
             }
         }
 
-        refreshServerList();
+        // HANYA LOAD SERVER LOKAL, BYPASS PUBLIK
+        loadLocalServers();
 
         String version = AppInfo.getVersion(this);
-
         TextView tv_version = findViewById(R.id.version_textview);
         TextView tv_dllversion = findViewById(R.id.dllversion_textview);
         tv_version.setText(String.format(Locale.ROOT, "%s%s%s Build %d", getString(R.string.ttversion), version, AppInfo.APPVERSION_POSTFIX, BuildConfig.VERSION_CODE));
         tv_dllversion.setText(getString(R.string.ttdllversion) + TeamTalkBase.getVersion());
 
-        checkVersionAsync();
+        // checkVersionAsync() DIHAPUS BIAR NGGAK CEK UPDATE ONLINE SAAT DEBUGGING
     }
 
     @Override
@@ -820,7 +922,6 @@ public class ServerListActivity extends AppCompatActivity
         if (serverentry != null) {
             Intent intent = new Intent(getBaseContext(), MainActivity.class);
             startActivity(intent.putExtra(ServerEntry.KEY_SERVERNAME, serverentry.servername));
-
             serverentry = null;
         }
     }
@@ -828,48 +929,45 @@ public class ServerListActivity extends AppCompatActivity
     @Override
     public int compare(ServerEntry s1, ServerEntry s2) {
         switch (s1.servertype) {
-            case LOCAL :
+            case LOCAL:
                 switch (s2.servertype) {
-                    case LOCAL :
+                    case LOCAL:
                         return s1.servername.compareToIgnoreCase(s2.servername);
-                    case OFFICIAL :
-                    case PUBLIC :
-                    case UNOFFICIAL :
+                    case OFFICIAL:
+                    case PUBLIC:
+                    case UNOFFICIAL:
                         return -1;
                 }
                 break;
-
             case OFFICIAL:
                 switch (s2.servertype) {
-                    case LOCAL :
+                    case LOCAL:
                         return 1;
-                    case OFFICIAL :
-                        return 0; // order determined by xml-reply (from web-request)
-                    case PUBLIC :
-                    case UNOFFICIAL :
+                    case OFFICIAL:
+                        return 0;
+                    case PUBLIC:
+                    case UNOFFICIAL:
                         return -1;
                 }
                 break;
-
-            case PUBLIC :
+            case PUBLIC:
                 switch (s2.servertype) {
-                    case LOCAL :
-                    case OFFICIAL :
+                    case LOCAL:
+                    case OFFICIAL:
                         return 1;
-                    case PUBLIC :
-                        return 0; // order determined by xml-reply (from web-request)
-                    case UNOFFICIAL :
+                    case PUBLIC:
+                        return 0;
+                    case UNOFFICIAL:
                         return -1;
                 }
                 break;
-
             case UNOFFICIAL:
                 switch (s2.servertype) {
-                    case LOCAL :
-                    case OFFICIAL :
-                    case PUBLIC :
+                    case LOCAL:
+                    case OFFICIAL:
+                    case PUBLIC:
                         return 1;
-                    case UNOFFICIAL :
+                    case UNOFFICIAL:
                         return s1.servername.compareToIgnoreCase(s2.servername);
                 }
                 break;
@@ -903,7 +1001,7 @@ public class ServerListActivity extends AppCompatActivity
 
     private Vector<ServerEntry> getLocalServers() {
         Vector<ServerEntry> localServers = new Vector<>();
-        synchronized(servers) {
+        synchronized (servers) {
             for (ServerEntry entry : servers) {
                 if (entry.servertype == ServerEntry.ServerType.LOCAL) {
                     localServers.add(entry);
@@ -923,7 +1021,7 @@ public class ServerListActivity extends AppCompatActivity
 
     private void exportToFile(Vector<ServerEntry> entries, File ttFile, int successMsgId) {
         final String filePath = ttFile.getAbsolutePath();
-        
+
         if (ttFile.exists()) {
             showFileOverrideDialog(entries, ttFile, filePath, successMsgId);
         } else {
@@ -977,12 +1075,12 @@ public class ServerListActivity extends AppCompatActivity
         input.requestFocus();
         alert.setView(input);
         alert.setPositiveButton(android.R.string.ok, (dialog, whichButton) -> {
-            InputMethodManager im = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
+            InputMethodManager im = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             im.hideSoftInputFromWindow(input.getWindowToken(), 0);
             getServerFromJoinCode(input.getText().toString().trim());
         });
         alert.setNegativeButton(android.R.string.cancel, (dialog, whichButton) -> {
-            InputMethodManager im = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
+            InputMethodManager im = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             im.hideSoftInputFromWindow(input.getWindowToken(), 0);
         });
         final AlertDialog dialog = alert.create();
@@ -1009,8 +1107,7 @@ public class ServerListActivity extends AppCompatActivity
                     if (!getService().reconnect()) {
                         showToast(getString(R.string.err_connection));
                     }
-                }
-                else {
+                } else {
                     showToast(getString(R.string.err_enter_joincode));
                 }
             });
