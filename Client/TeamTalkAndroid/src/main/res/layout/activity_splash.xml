@@ -31,12 +31,23 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"/>
 
-    <!-- Loading Indicator (Awalnya Hidden) -->
+    <!-- Loading Indicator -->
     <ProgressBar
         android:id="@+id/progress_bar"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
         android:visibility="gone"/>
+
+    <!-- ✅ STATUS TEXT: Feedback login -->
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Silakan login untuk melanjutkan"
+        android:textSize="14sp"
+        android:textColor="#90CAF9"
+        android:layout_marginTop="16dp"
+        android:gravity="center"/>
 
 </LinearLayout>
