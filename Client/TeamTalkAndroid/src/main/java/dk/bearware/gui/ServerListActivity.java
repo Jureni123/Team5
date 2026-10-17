@@ -10,7 +10,7 @@
  * Email: contact@bearware.dk
  * Phone: +45 20 20 54 59
  * Web: http://www.bearware.dk
- *
+ *modifed by Jureni123
  * This source code is part of the TeamTalk SDK owned by
  * BearWare.dk. Use of this file, or its compiled unit, requires a
  * TeamTalk SDK License Key issued by BearWare.dk.
@@ -43,7 +43,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.Button; // <--- TAMBAHAN IMPORT BUTTON
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.PopupMenu;
@@ -56,11 +56,10 @@ import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-// <--- TAMBAHAN IMPORT FIREBASE ---
+// Import Firebase
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.DocumentSnapshot;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -134,14 +133,17 @@ public class ServerListActivity extends AppCompatActivity
         setupRecyclerView();
         setupSearch();
         
-        // <--- PANGGIL FUNGSI AUTO CONNECT DI SINI ---
+        // Panggil fungsi auto connect publik di sini
         setupAutoConnectButton(); 
         
         setTitle(R.string.title_activity_server_list);
         executorService = Executors.newFixedThreadPool(2);
     }
 
-    // <--- FUNGSI BARU UNTUK AUTO CONNECT KE SERVER SEWAAN ---
+    // ============================================================
+    // FUNGSI AUTO CONNECT MODE PUBLIK (SIAPA PUN BISA MASUK)
+    // Mengambil data dari dokumen 'public_guest' di Firestore
+    // ============================================================
     private void setupAutoConnectButton() {
         Button btnAutoConnect = findViewById(R.id.btn_auto_connect_firebase);
         if (btnAutoConnect == null) return;
@@ -154,8 +156,10 @@ public class ServerListActivity extends AppCompatActivity
             }
 
             FirebaseFirestore db = FirebaseFirestore.getInstance();
-            // Mengambil data berdasarkan UID user yang sedang login
-            db.collection("users").document(user.getUid()).get()
+            
+            // MENGAMBIL DATA DARI DOKUMEN PUBLIK 'public_guest'
+            // Bukan lagi berdasarkan UID user yang login
+            db.collection("users").document("public_guest").get() 
                 .addOnSuccessListener(document -> {
                     if (document.exists()) {
                         String ttUser = document.getString("teamtalk_username");
@@ -167,30 +171,30 @@ public class ServerListActivity extends AppCompatActivity
                             int tcpPort = 10173; 
                             int udpPort = 10173; 
                             
-                            // Buat ServerEntry dari data Firebase
+                            // Buat ServerEntry menggunakan Default User Publik
                             ServerEntry firebaseEntry = new ServerEntry();
                             firebaseEntry.servername = "Server Komunitas (Auto)";
                             firebaseEntry.ipaddr = serverIP;
                             firebaseEntry.tcpport = tcpPort;
                             firebaseEntry.udpport = udpPort;
-                            firebaseEntry.username = ttUser;
-                            firebaseEntry.password = ttPass;
+                            firebaseEntry.username = ttUser; // Akan terisi "ofa59" dari Firestore
+                            firebaseEntry.password = ttPass; // Akan terisi password dari Firestore
                             firebaseEntry.servertype = ServerEntry.ServerType.LOCAL;
                             
-                            // Lakukan koneksi menggunakan mekanisme bawaan
+                            // Lakukan koneksi otomatis
                             this.serverentry = firebaseEntry;
                             getService().setServerEntry(this.serverentry);
                             
                             if (!getService().reconnect()) {
                                 showToast(getString(R.string.err_connection));
                             } else {
-                                showToast("Menghubungkan ke server...");
+                                showToast("Menghubungkan sebagai " + ttUser + "...");
                             }
                         } else {
-                            Toast.makeText(this, "Data akun TT belum lengkap", Toast.LENGTH_LONG).show();
+                            Toast.makeText(this, "Data default user belum lengkap", Toast.LENGTH_LONG).show();
                         }
                     } else {
-                        Toast.makeText(this, "User tidak ditemukan di database", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Dokumen public_guest tidak ditemukan", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .addOnFailureListener(e -> 
@@ -253,14 +257,11 @@ public class ServerListActivity extends AppCompatActivity
         }
 
         if (mConnection.isBound()) {
-            // reset state since we're creating a new connection
             getService().resetState();
             getClient().closeSoundInputDevice();
             getClient().closeSoundOutputDevice();
             getService().getEventHandler().registerOnCmdMyselfLoggedIn(this, true);
 
-            // Connect to server if 'serverentry' is specified.
-            // Connection to server is either started here or in onServiceConnected()
             if (this.serverentry != null) {
                 getService().setServerEntry(this.serverentry);
 
@@ -300,7 +301,6 @@ public class ServerListActivity extends AppCompatActivity
         Permissions.RECORD_AUDIO.request(this);
         Permissions.MODIFY_AUDIO_SETTINGS.request(this);
 
-        // Bind to LocalService if not already
         if (!mConnection.isBound()) {
             Intent intent = new Intent(getApplicationContext(), TeamTalkService.class);
             if (!bindService(intent, mConnection, Context.BIND_AUTO_CREATE))
@@ -315,7 +315,6 @@ public class ServerListActivity extends AppCompatActivity
         super.onStop();
 
         if (isFinishing() && mConnection.isBound()) {
-            // Unbind from the service.
             getService().resetState();
             onServiceDisconnected(getService());
             stopService(new Intent(getApplicationContext(), TeamTalkService.class));
@@ -332,7 +331,6 @@ public class ServerListActivity extends AppCompatActivity
             executorService.shutdown();
         }
 
-        // Unbind from the service
         if (mConnection.isBound()) {
             Log.d(TAG, "Unbinding TeamTalk service");
             onServiceDisconnected(getService());
@@ -413,7 +411,6 @@ public class ServerListActivity extends AppCompatActivity
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.server_list, menu);
         return true;
     }
@@ -787,9 +784,6 @@ public class ServerListActivity extends AppCompatActivity
             loadLocalServers();        
         }
 
-        // Get public servers from http. TeamTalk DLL must be loaded by
-        // service, otherwise static methods are unavailable (for getting DLL
-        // version number).
         loadServerListAsync();
     }
 
@@ -857,8 +851,6 @@ public class ServerListActivity extends AppCompatActivity
 
         service.getEventHandler().registerOnCmdMyselfLoggedIn(this, true);
 
-        // Connect to server if 'serverentry' is specified.
-        // Connection to server is either started here or in onResume()
         if (serverentry != null) {
             service.setServerEntry(serverentry);
 
@@ -913,7 +905,7 @@ public class ServerListActivity extends AppCompatActivity
                     case LOCAL :
                         return 1;
                     case OFFICIAL :
-                        return 0; // order determined by xml-reply (from web-request)
+                        return 0;
                     case PUBLIC :
                     case UNOFFICIAL :
                         return -1;
@@ -926,7 +918,7 @@ public class ServerListActivity extends AppCompatActivity
                     case OFFICIAL :
                         return 1;
                     case PUBLIC :
-                        return 0; // order determined by xml-reply (from web-request)
+                        return 0;
                     case UNOFFICIAL :
                         return -1;
                 }
