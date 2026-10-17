@@ -71,10 +71,7 @@ jobs:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
       # ============================================================
-      # ✅ KEYSTORE PERMANEN VIA GITHUB SECRETS (SHA-1 TIDAK BERUBAH!)
-      # ============================================================
-      # Keystore di-decode dari Base64 Secret → tidak di-generate ulang
-      # SHA-1 Fingerprint akan SELALU SAMA setiap build
+      # ✅ LOGIKA SMART: PERMANEN ATAU SEMENTARA OTOMATIS
       # ============================================================
       - name: Decode Permanent Keystore from Secret
         working-directory: ${{github.workspace}}/Client/TeamTalkAndroid
@@ -85,16 +82,15 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "⚠️  RELEASE_KEYSTORE_BASE64 secret belum diset!"
-            echo "⚠️  Generate keystore sementara untuk build ini..."
-            echo "⚠️  SHA-1 AKAN BERUBAH TIAP BUILD!"
+            echo "[WARN] RELEASE_KEYSTORE_BASE64 secret belum diset!"
+            echo "[INFO] Generate keystore sementara untuk build ini..."
             echo ""
             echo "=== CARA SETUP PERMANENT KEYSTORE ==="
             echo "1. Jalankan build ini dulu"
             echo "2. Salin SHA-1 dari output di bawah"
-            echo "3. Download file 'release-key.keystore' dari artifact"
+            echo "3. Download file release-key.keystore dari artifact"
             echo "4. Convert ke Base64: base64 release-key.keystore > keystore.b64"
-            echo "5. Paste isi keystore.b64 ke GitHub Secrets → RELEASE_KEYSTORE_BASE64"
+            echo "5. Paste isi keystore.b64 ke GitHub Secrets -> RELEASE_KEYSTORE_BASE64"
             echo "6. Set juga: KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD"
             echo "======================================="
             echo ""
@@ -102,40 +98,50 @@ jobs:
               -alias teamtalk-release -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass android123 -keypass android123 \
               -dname "CN=TeamTalk, OU=Dev, O=TeamTalk, L=Jakarta, ST=DKI, C=ID"
+            
             cat > keystore.properties <<EOF
-          storeFile=release-key.keystore
-          storePassword=android123
-          keyAlias=teamtalk-release
-          keyPassword=android123
-          EOF
+storeFile=release-key.keystore
+storePassword=android123
+keyAlias=teamtalk-release
+keyPassword=android123
+EOF
             echo "TEMPORARY_MODE=true" >> $GITHUB_ENV
+            
           else
-            echo "✅ Menggunakan PERMANENT keystore dari GitHub Secrets"
+            echo "[OK] Menggunakan PERMANENT keystore dari GitHub Secrets"
             echo "$KEYSTORE_BASE64" | base64 -d > release-key.keystore
+            
             cat > keystore.properties <<EOF
-          storeFile=release-key.keystore
-          storePassword=${KEYSTORE_PASSWORD}
-          keyAlias=${KEY_ALIAS}
-          keyPassword=${KEY_PASSWORD}
-          EOF
+storeFile=release-key.keystore
+storePassword=${KEYSTORE_PASSWORD}
+keyAlias=${KEY_ALIAS}
+keyPassword=${KEY_PASSWORD}
+EOF
             echo "TEMPORARY_MODE=false" >> $GITHUB_ENV
           fi
 
       # ✅ TAMPILKAN SHA-1 FINGERPRINT (PERMANEN JIKA SECRET SUDAH DISET)
-      - name: 📋 SHA-1 Fingerprint (SALIN INI KE FIREBASE!)
+      - name: SHA-1 Fingerprint (SALIN INI KE FIREBASE!)
         working-directory: ${{github.workspace}}/Client/TeamTalkAndroid
         run: |
+          STORE_PASS=$(grep storePassword keystore.properties | cut -d= -f2)
+          KEY_ALIAS_VAL=$(grep keyAlias keystore.properties | cut -d= -f2)
+          
           echo "=========================================="
-          echo "  🔑 SHA-1 FINGERPRINT (Untuk Firebase):"
+          echo "  [KEY] SHA-1 FINGERPRINT (Untuk Firebase):"
           echo "=========================================="
           keytool -list -v -keystore release-key.keystore \
-            -alias $(grep keyAlias keystore.properties | cut -d= -f2) \
-            -storepass $(grep storePassword keystore.properties | cut -d= -f2) 2>/dev/null | grep SHA1:
+            -alias "$KEY_ALIAS_VAL" \
+            -storepass "$STORE_PASS" 2>/dev/null | grep SHA1:
           echo "=========================================="
           echo ""
-          echo "  📌 Jika SHA-1 ini berubah tiap build,"
-          echo "     berarti secret belum diset."
-          echo "     Ikuti instruksi di step sebelumnya."
+          if [ "$TEMPORARY_MODE" = "true" ]; then
+            echo "  [TEMP] MODE SEMENTARA: SHA-1 ini hanya berlaku untuk build kali ini."
+            echo "         Gunakan SHA-1 ini untuk tes login Google sekarang."
+            echo "         Untuk permanen, ikuti instruksi di step sebelumnya."
+          else
+            echo "  [PERM] MODE PERMANEN: SHA-1 ini akan selalu sama selamanya."
+          fi
           echo "=========================================="
 
       # ✅ UPLOAD KEYSTORE SEMENTARA (Hanya jika mode temporary)
@@ -143,7 +149,7 @@ jobs:
         if: env.TEMPORARY_MODE == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ⚠️ DOWNLOAD-THIS-KEYSTORE-FOR-PERMANENT-SHA1
+          name: DOWNLOAD-THIS-KEYSTORE-FOR-PERMANENT-SHA1
           path: Client/TeamTalkAndroid/release-key.keystore
           retention-days: 90
 
@@ -165,7 +171,7 @@ jobs:
             if [ -f "$apk" ]; then
               BASENAME=$(basename "$apk" .apk)
               cp "$apk" "renamed_apk/${BASENAME}_${{ steps.commit_info.outputs.short_sha }}.apk"
-              echo "✅ ${BASENAME}.apk → ${BASENAME}_${{ steps.commit_info.outputs.short_sha }}.apk"
+              echo "[OK] ${BASENAME}.apk -> ${BASENAME}_${{ steps.commit_info.outputs.short_sha }}.apk"
             fi
           done
           ls -la renamed_apk/
@@ -179,14 +185,18 @@ jobs:
           if-no-files-found: error
 
       # ✅ BUILD SUMMARY
-      - name: 📊 Build Summary
+      - name: Build Summary
         run: |
           echo "=========================================="
-          echo "  ✅ BUILD SUCCESS!"
+          echo "  [SUCCESS] BUILD SUCCESS!"
           echo "=========================================="
           echo "  Commit SHA  : ${{ steps.commit_info.outputs.short_sha }}"
           echo "  Full SHA    : ${{ steps.commit_info.outputs.full_sha }}"
           echo "  Message     : ${{ steps.commit_info.outputs.commit_msg }}"
           echo "  Artifact    : TeamTalk5-${{ steps.commit_info.outputs.short_sha }}-arm64"
-          echo "  Keystore    : ${{ env.TEMPORARY_MODE == 'true' && '⚠️ TEMPORARY (SHA-1 akan berubah!)' || '✅ PERMANENT (SHA-1 tetap)' }}"
+          if [ "$TEMPORARY_MODE" = "true" ]; then
+            echo "  Keystore    : [TEMP] TEMPORARY (SHA-1 berubah tiap build)"
+          else
+            echo "  Keystore    : [PERM] PERMANENT (SHA-1 tetap selamanya)"
+          fi
           echo "=========================================="
