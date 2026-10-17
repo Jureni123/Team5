@@ -58,7 +58,6 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.PopupMenu;
-import android.widget.PopupMenu.OnMenuItemClickListener;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SeekBar;
@@ -135,7 +134,7 @@ import dk.bearware.utils.PrefsHelper;
 public class MainActivity
 extends AppCompatActivity
         implements TeamTalkConnectionListener,
-        OnMenuItemClickListener,
+        PopupMenu.OnMenuItemClickListener,
         SensorEventListener,
         OnVoiceTransmissionToggleListener,
         ClientEventListener.OnConnectionLostListener,
@@ -1579,7 +1578,7 @@ extends AppCompatActivity
             }
             Log.d(TAG, "Channel message in " + this.hashCode());
             break;
-        case TextMsgType.MSGTYPE_BCASTMSG :
+        case TextMsgType.MSGTYPE_BROADCAST :
             accessibilityAssistant.lockEvents(); textmsgAdapter.notifyDataSetChanged(); accessibilityAssistant.unlockEvents();
             if (completemsg == null) break;
             if (sounds.get(SOUND_BCASTMSG) != 0) audioIcons.play(sounds.get(SOUND_BCASTMSG), 1.0f, 1.0f, 0, 0, 1.0f);
@@ -1701,6 +1700,4 @@ extends AppCompatActivity
                 if (ptt_vibrate) { Vibrator vibrat = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE); vibrat.vibrate(50); }
             } else {
                 if (sounds.get(SOUND_VOICETXOFF) != 0) audioIcons.play(sounds.get(SOUND_VOICETXOFF), 1.0f, 1.0f, 0, 0, 1.0f);
-                if (ptt_vibrate) { Vibrator vibrat = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE); vibrat.vibrate(new long[]{0, 20, 80, 20}, -1); }
-            }
-        }
+                if (ptt_vibrate) { Vibrato
