@@ -1689,15 +1689,56 @@ extends AppCompatActivity
         }
     }
 
+
     @Override
     public void onVoiceTransmissionToggle(boolean voiceTransmissionEnabled, boolean isSuspended) {
         adjustTxState(voiceTransmissionEnabled);
+
         if (!isSuspended) {
-            boolean ptt_vibrate = prefs.get("vibrate_checkbox", true) && Permissions.VIBRATE.request(this);
+            boolean ptt_vibrate = prefs.get("vibrate_checkbox", true) &&
+                Permissions.VIBRATE.request(this);
             if (voiceTransmissionEnabled) {
                 accessibilityAssistant.shutUp();
-                if (sounds.get(SOUND_VOICETXON) != 0) audioIcons.play(sounds.get(SOUND_VOICETXON), 1.0f, 1.0f, 0, 0, 1.0f);
-                if (ptt_vibrate) { Vibrator vibrat = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE); vibrat.vibrate(50); }
+                if (sounds.get(SOUND_VOICETXON) != 0) {
+                    audioIcons.play(sounds.get(SOUND_VOICETXON), 1.0f, 1.0f, 0, 0, 1.0f);
+                }
+                if (ptt_vibrate) {
+                    Vibrator vibrat = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                    vibrat.vibrate(50);
+                }
             } else {
-                if (sounds.get(SOUND_VOICETXOFF) != 0) audioIcons.play(sounds.get(SOUND_VOICETXOFF), 1.0f, 1.0f, 0, 0, 1.0f);
-                if (ptt_vibrate) { Vibrato
+                if (sounds.get(SOUND_VOICETXOFF) != 0) {
+                    audioIcons.play(sounds.get(SOUND_VOICETXOFF), 1.0f, 1.0f, 0, 0, 1.0f);
+                }
+                if (ptt_vibrate) {
+                    Vibrator vibrat = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                    long[] pattern = { 0, 20, 80, 20 };
+                    vibrat.vibrate(pattern, -1);
+                }
+            }
+        }
+    }
+
+    @Override
+    public void onVoiceActivationToggle(boolean voiceActivationEnabled, boolean isSuspended) {
+        adjustVoxState(voiceActivationEnabled, voiceActivationEnabled ? getClient().getVoiceActivationLevel() : getClient().getSoundInputGainLevel());
+        if (voiceActivationEnabled) {
+            if (sounds.get(SOUND_VOXENABLE) != 0) {
+                audioIcons.play(sounds.get(SOUND_VOXENABLE), 1.0f, 1.0f, 0, 0, 1.0f);
+            }
+        } else {
+            if (sounds.get(SOUND_VOXDISABLE) != 0) {
+                audioIcons.play(sounds.get(SOUND_VOXDISABLE), 1.0f, 1.0f, 0, 0, 1.0f);
+            }
+        }
+    }
+
+    @Override
+    public void onVoiceActivation(boolean bVoiceActive) {
+        adjustTxState(bVoiceActive);
+
+        int sound = sounds.get(bVoiceActive ? SOUND_VOXON : SOUND_VOXOFF);
+        if (sound != 0)
+            audioIcons.play(sound, 1.0f, 1.0f, 0, 0, 1.0f);
+    }
+}
