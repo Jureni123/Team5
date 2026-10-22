@@ -19,10 +19,13 @@ public class ChannelListFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater,
                              @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
-        View view = inflater.inflate(R.layout.fragment_channels_list, container, false);
+        // Pakai layout yang sudah ada
+        View view = inflater.inflate(R.layout.fragment_main_channels, container, false);
         
-        listView = view.findViewById(R.id.channels_list_view);
+        // Sesuaikan ID dengan xml kamu: listChannels
+        listView = view.findViewById(R.id.listChannels);
         
+        // Ambil adapter dari MainActivity
         if (getActivity() instanceof MainActivity) {
             MainActivity mainActivity = (MainActivity) getActivity();
             channelsAdapter = mainActivity.getChannelsAdapter();
