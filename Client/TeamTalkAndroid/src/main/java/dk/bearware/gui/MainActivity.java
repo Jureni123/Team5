@@ -1027,8 +1027,9 @@ extends AppCompatActivity
         }
         return false;
     }
+//kelas fragmen chlist=====""="
 
-    public static class ChannelsSectionFragment extends Fragment {
+    /*public static class ChannelsSectionFragment extends Fragment {
         MainActivity mainActivity;
 
         public ChannelsSectionFragment() {
@@ -1038,7 +1039,46 @@ extends AppCompatActivity
         public void onAttach(@NonNull Activity activity) {
             mainActivity = (MainActivity) activity;
             super.onAttach(activity);
+        }*/
+        
+public static class ChannelsSectionFragment extends Fragment {
+    MainActivity mainActivity;
+    private ChannelListFragment mChannelListFragment;
+
+    public ChannelsSectionFragment() {
+    }
+
+    @Override
+    public void onAttach(@NonNull Activity activity) {
+        super.onAttach(activity);
+        mainActivity = (MainActivity) activity;
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View rootView = inflater.inflate(R.layout.fragment_main_channels, container, false);
+        mainActivity.accessibilityAssistant.registerPage(rootView, SectionsPagerAdapter.CHANNELS_PAGE);
+
+        // Pasang ChannelListFragment ke dalam ListView yang sudah ada
+        if (savedInstanceState == null) {
+            mChannelListFragment = new ChannelListFragment();
+            getChildFragmentManager()
+                .beginTransaction()
+                .replace(R.id.listChannels, mChannelListFragment)
+                .commit();
         }
+
+        return rootView;
+    }
+
+    // Panggil ini dari MainActivity untuk refresh daftar channel
+    public void refreshChannelList() {
+        if (mChannelListFragment != null) {
+            mChannelListFragment.refreshList();
+        }
+    }
+}
+
 
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -1051,7 +1091,7 @@ extends AppCompatActivity
             return rootView;
         }
     }
-    
+    //=========
     public static class ChatSectionFragment extends Fragment {
         MainActivity mainActivity;
         
